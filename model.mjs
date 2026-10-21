@@ -1,6 +1,8 @@
 export const VERSION = 1;
 export const POPULARITY = ['俺だけの', '一部の', '大抵の', 'みんなの'];
 export const COLORS = ['blue', 'gray', 'green', 'purple', 'pink', 'orange'];
+export const CATEGORY_ICONS = ['star','heart','mic','practice','moon','note','flag','headphones'];
+export const DEFAULT_CATEGORY_ICONS = ['star','heart','mic','practice','moon'];
 export const RANGE_FIELDS = [['chest', '最高音（地声）'], ['falsetto', '最高音（裏声）'], ['lowest', '最低音']];
 export const MAX_FILE_SIZE = 25 * 1024 * 1024;
 export const DEFAULT_THEME = {background:[242,245,247],accent:[144,200,224]};
@@ -16,8 +18,8 @@ export function initialState() {
   return {
     schemaVersion: VERSION, revision: 0, modifiedAt: new Date().toISOString(),
     lastExportAt: null, lastExportRevision: -1,
-    categories: ['一八番', '好き', '歌える', '練習中', 'いつの日か'].map((label, i) => ({id: `category-${i}`, label, color: COLORS[i]})),
-    songs: [], preferences: {lyricsFont: 20, theme: clone(DEFAULT_THEME)}
+    categories: ['一八番', '好き', '歌える', '練習中', 'いつの日か'].map((label, i) => ({id: `category-${i}`, label, color: COLORS[i], icon:DEFAULT_CATEGORY_ICONS[i]})),
+    songs: [], preferences: {lyricsFont: 20, theme: clone(DEFAULT_THEME), showArtists:false, animateTitles:true}
   };
 }
 
@@ -64,7 +66,9 @@ export function validateState(input) {
     const categoryId = validId(category.id), label = text(category.label, '分類名', 80).trim();
     if (!label || categoryIds.has(categoryId) || categoryNames.has(normalize(label)) || !COLORS.includes(category.color)) fail('分類名・色・識別番号が重複しているか、正しくありません。');
     categoryIds.add(categoryId); categoryNames.add(normalize(label));
-    return {id: categoryId, label, color: category.color};
+    const categoryIcon = category.icon ?? DEFAULT_CATEGORY_ICONS[Number(categoryId.match(/^category-(\d)$/)?.[1])] ?? 'note';
+    if (!CATEGORY_ICONS.includes(categoryIcon)) fail('分類アイコンが正しくありません。');
+    return {id: categoryId, label, color: category.color, icon:categoryIcon};
   });
   if (!Array.isArray(raw.songs) || raw.songs.length > 10000) fail('楽曲の形式が正しくないか、10,000曲を超えています。');
   const songIds = new Set();
@@ -97,8 +101,10 @@ export function validateState(input) {
   });
   const preferences = object(raw.preferences, '設定');
   if (![16, 18, 20, 24, 28].includes(preferences.lyricsFont)) fail('文字サイズの設定が正しくありません。');
+  if (preferences.showArtists !== undefined && typeof preferences.showArtists !== 'boolean') fail('一覧の表示設定が正しくありません。');
+  if (preferences.animateTitles !== undefined && typeof preferences.animateTitles !== 'boolean') fail('曲名の表示設定が正しくありません。');
   return {
-    schemaVersion: VERSION, songs, categories, preferences: {lyricsFont: preferences.lyricsFont, theme: validateTheme(preferences.theme)},
+    schemaVersion: VERSION, songs, categories, preferences: {lyricsFont: preferences.lyricsFont, theme: validateTheme(preferences.theme), showArtists:preferences.showArtists ?? false, animateTitles:preferences.animateTitles ?? true},
     revision: Number.isSafeInteger(raw.revision) && raw.revision >= 0 ? raw.revision : 0,
     modifiedAt: date(raw.modifiedAt, 'データの更新日'),
     lastExportAt: raw.lastExportAt ? date(raw.lastExportAt, '書き出し日') : null,
@@ -145,11 +151,18 @@ export function readBackup(contents) {
   return {data: validateState(input.data), exportedAt: date(input.exportedAt, '書き出し日')};
 }
 
+const songSearchCache = new WeakMap();
+const collator = new Intl.Collator('ja',{numeric:true});
+function searchableText(song) {
+  const source = [song.title, ...song.artists, ...song.genres, ...song.memories, song.notes, song.keyNote].join('\u0000');
+  const cached = songSearchCache.get(song);
+  if (cached?.source === source) return cached.text;
+  const text = normalize(source); songSearchCache.set(song,{source,text}); return text;
+}
 export function searchSongs(state, query = '', filters = {}, sort = 'updated') {
   const words = normalize(query).split(/\s+/).filter(Boolean);
   const songs = activeSongs(state).filter(song => {
-    const haystack = normalize([song.title, ...song.artists, ...song.genres, ...song.memories, song.notes, song.keyNote].join(' '));
-    if (!words.every(word => haystack.includes(word))) return false;
+    if (words.length && !words.every(word => searchableText(song).includes(word))) return false;
     if (filters.category && (filters.category === '__unset' ? !!song.categoryId : song.categoryId !== filters.category)) return false;
     if (filters.popularity && song.popularity !== filters.popularity) return false;
     if (filters.year && song.year !== filters.year) return false;
@@ -159,14 +172,15 @@ export function searchSongs(state, query = '', filters = {}, sort = 'updated') {
     if (filters.memories?.length && !filters.memories.some(tag => song.memories.includes(tag))) return false;
     return true;
   });
-  const titleSort = (a, b) => a.title.localeCompare(b.title, 'ja', {numeric: true});
+  const titleSort = (a, b) => collator.compare(a.title,b.title);
+  const categoryOrder = new Map(state.categories.map((category,index) => [category.id,index]));
   return songs.sort((a, b) => {
     switch (sort) {
       case 'title': return titleSort(a, b);
-      case 'artist': return a.artists.join(' ').localeCompare(b.artists.join(' '), 'ja') || titleSort(a, b);
+      case 'artist': return collator.compare(a.artists.join(' '),b.artists.join(' ')) || titleSort(a, b);
       case 'created': return b.createdAt.localeCompare(a.createdAt) || titleSort(a, b);
       case 'year': return (Number(b.year) || 0) - (Number(a.year) || 0) || titleSort(a, b);
-      case 'category': return (a.categoryId ? state.categories.findIndex(c => c.id === a.categoryId) : 999) - (b.categoryId ? state.categories.findIndex(c => c.id === b.categoryId) : 999) || titleSort(a, b);
+      case 'category': return (categoryOrder.get(a.categoryId) ?? 999) - (categoryOrder.get(b.categoryId) ?? 999) || titleSort(a, b);
       default: return b.updatedAt.localeCompare(a.updatedAt) || titleSort(a, b);
     }
   });

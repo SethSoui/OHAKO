@@ -4,9 +4,9 @@ const DATABASE = 'ohako-library';
 export class ConflictError extends Error {
   constructor() { super('別の画面でデータが更新されています。最新の内容を確認してから保存してください。入力内容は下書きに残っています。'); this.name = 'ConflictError'; }
 }
-export function openStorage() {
+export function openStorage(databaseName = DATABASE) {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE, 1);
+    const request = indexedDB.open(databaseName, 1);
     request.onupgradeneeded = () => request.result.createObjectStore('records');
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error('別のOHAKOを閉じてから、もう一度開いてください。'));
@@ -20,6 +20,7 @@ export function openStorage() {
 
 class Store {
   constructor(db) { this.db = db; }
+  close() { this.db.close(); }
   get(key) {
     return new Promise((resolve, reject) => {
       const request = this.db.transaction('records').objectStore('records').get(key);

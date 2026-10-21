@@ -1,5 +1,5 @@
-const CACHE = 'ohako-shell-v1.0.0-3';
-const FILES = ['./', './index.html', './styles.css', './app.mjs', './model.mjs', './storage.mjs', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable.png', './icons/apple-touch-icon.png'];
+const CACHE = 'ohako-shell-v1.1.0-final';
+const FILES = ['./', './index.html', './styles.css', './app.mjs', './model.mjs', './list-view.mjs', './storage.mjs', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable.png', './icons/apple-touch-icon.png'];
 const urls = new Set(FILES.map(path => new URL(path, self.registration.scope).href));
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES))));
 self.addEventListener('activate', event => event.waitUntil((async () => {

@@ -1,5 +1,6 @@
 import {POPULARITY, RANGE_FIELDS, COLORS, MAX_FILE_SIZE, DEFAULT_THEME, validateTheme, themeProperties, id, clone, e, normalize, uniq, initialState, emptySong, activeSongs, categoryOf, validateState, makeBackup, readBackup, searchSongs, parseBulk, makeCsv, excerptMarkup, samples} from './model.mjs';
 import {openStorage, ConflictError} from './storage.mjs';
+import {PAGE_SIZE,ICON_LABELS,categoryIcon,categoryMarker,pageOf,compactRows,installMarquees} from './list-view.mjs';
 
 const $ = selector => document.querySelector(selector);
 const root = $('#content');
@@ -7,6 +8,7 @@ let store, state, editor = null, draftTimer, toastTimer, registration, wakeLock;
 let route = '', routeToken = 0, listScroll = 0, busy = false, offlineReady = false;
 let newDraft = null, rollbackAvailable = false;
 let themeDraft = null;
+let listPage=0,stopMarquees=()=>{},searchTimer,appearanceDraft;
 let query = '', sort = 'updated', filters = {}, filterWorking = {};
 let bulkText = '', bulkRows = [], bulkCategory = '', bulkGenres = '', bulkMemories = '';
 const paths = {
@@ -72,17 +74,23 @@ channel?.addEventListener('message', () => refreshFromStorage().catch(error => t
 function filterCount() { return Object.entries(filters).reduce((n, [,value]) => n + (Array.isArray(value) ? value.length : value ? 1 : 0), 0); }
 function listMarkup() {
   const songs = activeSongs(state), count = songs.length;
-  return `${title('MY REPERTOIRE', 'あなたの十八番、<br>ここに。', `<div class="count"><strong>${count}</strong>曲</div>`)}
+  const counts=new Map(); for(const song of songs)counts.set(song.categoryId,(counts.get(song.categoryId)??0)+1);
+  return `${title('MY REPERTOIRE', '楽曲一覧', `<div class="list-heading-side"><span class="count"><strong>${count}</strong>曲</span><button class="icon-button list-help" data-action="list-legend" aria-label="一覧のアイコンの見方">?</button></div>`)}
     ${newDraft ? `<div class="draft-banner"><p>書きかけの曲があります${newDraft.song.title ? `：${e(newDraft.song.title)}` : ''}</p><button class="text-button" data-go="/add">続きを書く</button><button class="icon-button" data-action="discard-new-draft" aria-label="下書きを破棄">×</button></div>` : ''}
     <div class="search-row"><div class="search-box">${icon('search')}<input id="song-search" type="search" value="${e(query)}" placeholder="曲名、歌手、タグから探す" aria-label="楽曲を検索" autocomplete="off"><button class="search-clear" data-action="clear-search" aria-label="検索をクリア"${query ? '' : ' hidden'}>×</button></div><button class="filter-button${filterCount() ? ' active' : ''}" data-action="filters" aria-label="絞り込み条件を設定">${icon('filter')}${filterCount() ? `<span class="filter-count">${filterCount()}</span>` : ''}</button></div>
-    <div class="category-strip" aria-label="歌う分類で絞り込み"><button class="category-chip${!filters.category ? ' selected' : ''}" data-action="category-filter" data-value="" aria-pressed="${!filters.category}">すべて<small>${count}</small></button>${state.categories.map(category => `<button class="category-chip${filters.category === category.id ? ' selected' : ''}" data-action="category-filter" data-value="${category.id}" aria-pressed="${filters.category === category.id}">${e(category.label)}<small>${songs.filter(song => song.categoryId === category.id).length}</small></button>`).join('')}<button class="category-chip${filters.category === '__unset' ? ' selected' : ''}" data-action="category-filter" data-value="__unset" aria-pressed="${filters.category === '__unset'}">未設定<small>${songs.filter(song => !song.categoryId).length}</small></button></div>
+    <div class="category-strip" aria-label="歌う分類で絞り込み"><button class="category-chip${!filters.category ? ' selected' : ''}" data-action="category-filter" data-value="" aria-pressed="${!filters.category}">すべて<small>${count}</small></button>${state.categories.map(category => `<button class="category-chip${filters.category === category.id ? ' selected' : ''}" data-action="category-filter" data-value="${category.id}" aria-pressed="${filters.category === category.id}">${e(category.label)}<small>${counts.get(category.id)??0}</small></button>`).join('')}<button class="category-chip${filters.category === '__unset' ? ' selected' : ''}" data-action="category-filter" data-value="__unset" aria-pressed="${filters.category === '__unset'}">未設定<small>${counts.get('')??0}</small></button></div>
     <div class="list-toolbar"><span id="result-count" role="status"></span><label class="sort-wrap">並べ替え<select id="sort" aria-label="楽曲の並べ替え">${[['updated','更新した順'],['created','追加した順'],['title','曲名順'],['artist','アーティスト順'],['category','歌う分類順'],['year','西暦の新しい順']].map(([value,label]) => `<option value="${value}"${sort === value ? ' selected' : ''}>${label}</option>`).join('')}</select></label></div>
     <div id="list-results"></div><p class="list-note">あなたの曲は、この端末の中に。<br>大切なレパートリーは、設定からバックアップできます。</p>`;
 }
 function updateResults() {
+  stopMarquees();
   const songs = searchSongs(state, query, filters, sort), all = activeSongs(state).length;
-  $('#result-count').textContent = `${songs.length}曲を表示${filterCount() || query ? ' · 条件指定中' : ''}`;
-  $('#list-results').innerHTML = songs.length ? `<div class="song-list">${songs.map((song,index) => `<a class="song-card" href="#/song/${song.id}" aria-label="${e(song.title)}の詳細"><span class="song-index">${String(index + 1).padStart(2,'0')}</span><div class="song-body"><div class="song-topline">${badge(categoryOf(state,song.categoryId))}${song.lyrics ? '<span class="tag">歌詞あり</span>' : ''}</div><h2 class="song-title">${e(song.title)}</h2><p class="song-artist">${e(song.artists.join(' / ') || 'アーティスト未設定')}</p><div class="tag-row">${tags([...song.genres,...song.memories].slice(0,3))}${song.keyNote ? `<span class="key-inline">♮ ${e(song.keyNote)}</span>` : ''}</div></div><span class="arrow">${icon('arrow')}</span></a>`).join('')}</div>${query || filterCount() ? '<button class="text-button" data-action="clear-filters">検索・絞り込みをすべて解除</button>' : ''}` : `<div class="empty-state"><div class="empty-icon">${icon(all ? 'search' : 'music')}</div><h2>${all ? '条件に合う曲がありません' : '最初の1曲から、はじめよう。'}</h2><p>${all ? '検索する言葉や、絞り込み条件を変えてみてください。' : '曲名だけでも登録できます。<br>タグや歌詞は、あとからゆっくり。'}</p>${all ? '<button class="button secondary" data-action="clear-filters">条件をすべて解除</button>' : '<button class="button primary" data-go="/add">＋ 最初の曲を追加する</button><br><button class="text-button" data-action="samples">架空のサンプル3曲で試す</button>'}</div>`;
+  const page=pageOf(songs,listPage);listPage=page.page;
+  $('#result-count').textContent = `${songs.length}曲${page.pages>1?` · ${page.start+1}–${page.end}曲目`:''}${filterCount() || query ? ' · 条件指定中' : ''}`;
+  const selector=page.pages>1?`<div class="page-jump"><label>表示ページ<select id="list-page" aria-label="表示ページ">${Array.from({length:page.pages},(_,i)=>`<option value="${i}"${i===page.page?' selected':''}>${i+1} / ${page.pages}</option>`).join('')}</select></label><span>全曲を対象に検索できます</span></div>`:'';
+  const pagination=page.pages>1?`<div class="pagination"><button class="button secondary small" data-action="list-page" data-page="${page.page-1}"${page.page===0?' disabled':''}>前の${PAGE_SIZE}曲</button><span>${page.page+1} / ${page.pages}</span><button class="button secondary small" data-action="list-page" data-page="${page.page+1}"${page.page===page.pages-1?' disabled':''}>次の${PAGE_SIZE}曲</button></div>`:'';
+  $('#list-results').innerHTML = songs.length ? selector+compactRows(page.songs,state)+pagination+(query || filterCount() ? '<button class="text-button" data-action="clear-filters">検索・絞り込みをすべて解除</button>' : '') : `<div class="empty-state"><div class="empty-icon">${icon(all ? 'search' : 'music')}</div><h2>${all ? '条件に合う曲がありません' : '最初の1曲から、はじめよう。'}</h2><p>${all ? '検索する言葉や、絞り込み条件を変えてみてください。' : '曲名だけでも登録できます。<br>タグや歌詞は、あとからゆっくり。'}</p>${all ? '<button class="button secondary" data-action="clear-filters">条件をすべて解除</button>' : '<button class="button primary" data-go="/add">＋ 最初の曲を追加する</button><br><button class="text-button" data-action="samples">架空のサンプル3曲で試す</button>'}</div>`;
+  stopMarquees=installMarquees($('#list-results'),state.preferences.animateTitles);
 }
 
 function tagEditor(key, label, placeholder) {
@@ -171,10 +179,10 @@ function settingsMarkup() {
   const songs = activeSongs(state), trash = state.songs.length - songs.length;
   const changed = state.revision !== state.lastExportRevision;
   return `<div class="settings-layout">${title('MAKE IT YOURS','あなたのOHAKOに。')}<section class="panel"><h2>データを持ち出す・戻す</h2><div class="backup-status${changed && state.songs.length ? ' changed' : ''}">${state.songs.length ? (changed ? '書き出し後に変更があります。' : '前回の書き出しから変更はありません。') : 'まだ楽曲が登録されていません。'}<br>前回のJSON書き出し：${dateLabel(state.lastExportAt)}<br>登録 ${songs.length}曲 ／ ゴミ箱 ${trash}曲</div><div class="backup-buttons"><button class="button primary" data-action="export-json">${icon('export')}JSONを書き出す</button><button class="button secondary" data-action="choose-import">${icon('import')}JSONから復元</button></div><input type="file" id="import-file" accept=".json,application/json" hidden><p class="help">JSONには全楽曲・歌詞・分類設定・ゴミ箱を含めます。「ファイルに保存」で保存先を選び、保存できたことを確認してください。ほかの端末には、このファイルをコピーして復元できます。</p><hr class="subtle-line"><label class="check-row"><input type="checkbox" id="csv-lyrics" checked>CSVに歌詞を含める</label><button class="button secondary full" data-action="export-csv">CSVを書き出す</button><p class="help">CSVは表計算での閲覧・加工用です。完全な復元にはJSONを使います。</p>${rollbackAvailable ? '<hr class="subtle-line"><button class="text-button" data-action="undo-restore">直前のJSON復元を取り消す</button><p class="help">復元前に端末内へ退避した内容に戻します。復元後の編集も置き換わります。</p>' : ''}</section>
-    <section class="panel"><h2>歌う分類をカスタマイズ</h2><p class="section-description">名前と並び順を変更できます。曲に使っている分類を削除するときは、移動先を選べます。</p><div>${state.categories.map((category,index) => `<div class="category-edit"><label class="sr-only" for="category-${category.id}">分類「${e(category.label)}」の名前</label><input id="category-${category.id}" value="${e(category.label)}" maxlength="80"><button class="save-category" data-action="rename-category" data-id="${category.id}" aria-label="${e(category.label)}の名前を保存">保存</button><button class="icon-button" data-action="move-category" data-id="${category.id}" data-direction="-1" aria-label="${e(category.label)}を上へ"${index === 0 ? ' disabled' : ''}>↑</button><button class="icon-button" data-action="move-category" data-id="${category.id}" data-direction="1" aria-label="${e(category.label)}を下へ"${index === state.categories.length - 1 ? ' disabled' : ''}>↓</button><button class="icon-button delete-category" data-action="delete-category" data-id="${category.id}" aria-label="${e(category.label)}を削除">×</button></div>`).join('')}</div><div class="category-add"><input class="plain-input" id="new-category" maxlength="80" placeholder="新しい分類名" aria-label="新しい分類名"><button class="button secondary small" data-action="new-category">追加</button></div></section>
+    <section class="panel"><h2>歌う分類をカスタマイズ</h2><p class="section-description">左の目印を押すとアイコンと色を変更できます。名前・並び順も変更可能です。</p><div>${state.categories.map((category,index) => `<div class="category-edit"><button class="category-appearance-button" data-action="category-appearance" data-id="${category.id}" aria-label="${e(category.label)}のアイコンと色">${categoryMarker(category)}</button><label class="sr-only" for="category-${category.id}">分類「${e(category.label)}」の名前</label><input id="category-${category.id}" value="${e(category.label)}" maxlength="80"><button class="save-category" data-action="rename-category" data-id="${category.id}" aria-label="${e(category.label)}の名前を保存">保存</button><button class="icon-button" data-action="move-category" data-id="${category.id}" data-direction="-1" aria-label="${e(category.label)}を上へ"${index === 0 ? ' disabled' : ''}>↑</button><button class="icon-button" data-action="move-category" data-id="${category.id}" data-direction="1" aria-label="${e(category.label)}を下へ"${index === state.categories.length - 1 ? ' disabled' : ''}>↓</button><button class="icon-button delete-category" data-action="delete-category" data-id="${category.id}" aria-label="${e(category.label)}を削除">×</button></div>`).join('')}</div><div class="category-add"><input class="plain-input" id="new-category" maxlength="80" placeholder="新しい分類名" aria-label="新しい分類名"><button class="button secondary small" data-action="new-category">追加</button></div></section>
     <section class="panel"><h2>テーマカラー</h2><p class="section-description">冬のグレーと水色を、あなたの好きな色に。RGBはそれぞれ0〜255で指定できます。変更中は画面全体でプレビューします。</p><div id="theme-editor">${themeEditorMarkup()}</div><div class="actions"><button class="button primary" data-action="save-theme">この配色を保存</button><button class="text-button" data-action="reset-theme">冬の配色に戻す</button></div><p class="help" id="theme-status">文字色は、背景に合わせて読みやすく調整します。</p></section>
-    <section class="panel"><h2>表示と端末への保存</h2><div class="setting-row"><div><strong>歌詞の文字サイズ</strong><p class="help">詳細画面からも調整できます</p></div><select id="lyrics-size" aria-label="歌詞の文字サイズ">${[16,18,20,24,28].map(value => `<option value="${value}"${state.preferences.lyricsFont === value ? ' selected' : ''}>${value}</option>`).join('')}</select></div><div class="setting-row"><div><strong>オフラインで使う準備</strong><p class="help" id="offline-status">${offlineReady ? '準備できています。機内モードでも試せます。' : '準備中、またはこのブラウザでは利用できません。'}</p></div></div><div class="setting-row"><div><strong>端末内データの保持をリクエスト</strong><p class="help">ブラウザによる自動削除を抑えるための設定です</p></div><button class="button secondary small" data-action="persist">設定する</button></div><button class="text-button" data-go="/trash">ゴミ箱を見る（${trash}曲）</button></section>
-    <section class="panel"><h2>OHAKOについて</h2><p class="privacy-note">曲・歌詞・メモはこの端末のブラウザ内に保存します。アカウントやデータ送信、アクセス解析はありません。別の端末やブラウザには自動で同期されません。</p><p class="privacy-note">端末の故障やサイトデータの削除に備え、JSONをときどきiCloud Driveなどにも保存してください。書き出したファイルは暗号化されていません。</p><p class="privacy-note">iPhoneではSafariの共有メニューから「ホーム画面に追加」すると、アプリのように開けます。</p><button class="text-button" data-action="samples">架空のサンプル3曲を追加して試す</button><p class="help">OHAKO-18番- · v1.0.0</p></section></div>`;
+    <section class="panel"><h2>表示と端末への保存</h2><label class="check-row list-preference"><input type="checkbox" id="show-artists"${state.preferences.showArtists?' checked':''}>一覧にアーティスト名を表示する</label><label class="check-row list-preference"><input type="checkbox" id="animate-titles"${state.preferences.animateTitles?' checked':''}>長い曲名をゆっくり横に流す</label><p class="help">画面内の長い曲名だけ、約2秒待って動かします。iPhoneの「視差効果を減らす」が有効な場合は動かしません。</p><div class="setting-row"><div><strong>歌詞の文字サイズ</strong><p class="help">詳細画面からも調整できます</p></div><select id="lyrics-size" aria-label="歌詞の文字サイズ">${[16,18,20,24,28].map(value => `<option value="${value}"${state.preferences.lyricsFont === value ? ' selected' : ''}>${value}</option>`).join('')}</select></div><div class="setting-row"><div><strong>オフラインで使う準備</strong><p class="help" id="offline-status">${offlineReady ? '準備できています。機内モードでも試せます。' : '準備中、またはこのブラウザでは利用できません。'}</p></div></div><div class="setting-row"><div><strong>端末内データの保持をリクエスト</strong><p class="help">ブラウザによる自動削除を抑えるための設定です</p></div><button class="button secondary small" data-action="persist">設定する</button></div><div class="setting-row"><div><strong>登録数とデータ容量</strong><p class="help">JSONと端末内の容量を確認できます</p></div><button class="button secondary small" data-action="capacity">容量を確認</button></div><button class="text-button" data-go="/trash">ゴミ箱を見る（${trash}曲）</button></section>
+    <section class="panel"><h2>OHAKOについて</h2><p class="privacy-note">曲・歌詞・メモはこの端末のブラウザ内に保存します。アカウントやデータ送信、アクセス解析はありません。別の端末やブラウザには自動で同期されません。</p><p class="privacy-note">端末の故障やサイトデータの削除に備え、JSONをときどきiCloud Driveなどにも保存してください。書き出したファイルは暗号化されていません。</p><p class="privacy-note">iPhoneではSafariの共有メニューから「ホーム画面に追加」すると、アプリのように開けます。</p><button class="text-button" data-action="samples">架空のサンプル3曲を追加して試す</button><p class="help">OHAKO-18番- · v1.1.0</p></section></div>`;
 }
 function trashMarkup() {
   const songs = state.songs.filter(song => song.deletedAt).sort((a,b) => b.deletedAt.localeCompare(a.deletedAt));
@@ -186,11 +194,13 @@ async function acquireWakeLock() {
   try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
 }
 async function renderRoute(keepScroll = false) {
+  stopMarquees();clearTimeout(searchTimer);
   const token = ++routeToken;
   const nextRoute = location.hash.slice(1).startsWith('/') ? location.hash.slice(1) : '/';
   if (route === '/' && nextRoute !== '/') listScroll = window.scrollY;
   if (editor && !nextRoute.startsWith('/add') && !nextRoute.startsWith('/edit/')) { await flushDraft(); editor = null; }
   route = nextRoute;
+  document.body.classList.toggle('list-mode',route==='/');
   applyTheme(state.preferences.theme);
   document.body.classList.toggle('reader-mode', route.startsWith('/lyrics/'));
   if (!route.startsWith('/lyrics/') && wakeLock) { await wakeLock.release().catch(() => {}); wakeLock = null; }
@@ -309,7 +319,7 @@ async function openFilters() {
   const confirmed = await modal({title:'曲を絞り込む',html:filterHtml(),confirm:'この条件で表示'});
   if (!confirmed) return;
   for (const key of ['category','popularity','year','lyrics']) filterWorking[key] = $(`#filter-${key}`).value;
-  filters = clone(filterWorking); await renderRoute(true);
+  filters = clone(filterWorking); listPage=0; await renderRoute(true);
 }
 
 function filename(extension) {
@@ -351,9 +361,22 @@ async function handleAction(action, node) {
   const songId = node.dataset.id;
   switch (action) {
     case 'add': await go('/add'); break;
-    case 'clear-search': query = ''; $('#song-search').value = ''; $('.search-clear').hidden = true; updateResults(); $('#song-search').focus(); break;
-    case 'clear-filters': query = ''; filters = {}; await renderRoute(true); break;
-    case 'category-filter': filters.category = node.dataset.value; await renderRoute(true); break;
+    case 'clear-search': clearTimeout(searchTimer);listPage=0;query = ''; $('#song-search').value = ''; $('.search-clear').hidden = true; updateResults(); $('#song-search').focus(); break;
+    case 'clear-filters': listPage=0;query = ''; filters = {}; await renderRoute(true); break;
+    case 'category-filter': listPage=0;filters.category = node.dataset.value; await renderRoute(true); break;
+    case 'list-page': listPage=Number(node.dataset.page);updateResults();window.scrollTo(0,0);break;
+    case 'list-legend': await modal({title:'一覧のアイコンの見方',html:`<div class="legend-list">${state.categories.map(category=>`<div>${categoryMarker(category)}<span>${e(category.label)}</span></div>`).join('')}</div><p>＃の数字はジャンル・思い出タグの合計数です。紙のアイコンは歌詞がある曲です。曲を開くと詳しい情報を確認できます。</p><p>分類のアイコンと色は設定から変更できます。</p>`,confirm:'わかりました',cancel:'閉じる'});break;
+    case 'category-appearance': {
+      const category=categoryOf(state,songId);appearanceDraft={icon:category.icon,color:category.color};
+      if(await modal({title:`「${category.label}」の目印`,html:`<p class="filter-heading">アイコン</p><div class="appearance-icons">${Object.entries(ICON_LABELS).map(([value,label])=>`<button class="appearance-choice${value===category.icon?' selected':''}" data-action="appearance-icon" data-value="${value}" aria-label="${label}" aria-pressed="${value===category.icon}">${categoryIcon(value)}<small>${label}</small></button>`).join('')}</div><p class="filter-heading">色</p><div class="filter-options">${[['blue','水色'],['gray','グレー'],['green','緑'],['purple','紫'],['pink','ピンク'],['orange','オレンジ']].map(([value,label])=>`<button class="appearance-color color-${value}${value===category.color?' selected':''}" data-action="appearance-color" data-value="${value}" aria-pressed="${value===category.color}">${label}</button>`).join('')}</div>`,confirm:'目印を保存'})){
+        await commit(next=>Object.assign(next.categories.find(category=>category.id===songId),appearanceDraft));await renderRoute(true);toast('分類のアイコンと色を保存しました');
+      }break;
+    }
+    case 'capacity': {
+      const bytes=new Blob([makeBackup(state)]).size, estimate=await navigator.storage?.estimate?.();
+      const mb=value=>(value/1024/1024).toFixed(1)+' MB';
+      await modal({title:'データ容量',message:`登録・ゴミ箱：${state.songs.length.toLocaleString()} / 10,000曲\nJSONバックアップ：約${mb(bytes)}\nJSON読み込みの上限：25 MB\n${estimate?.usage!==undefined?`このサイトの端末内使用量：約${mb(estimate.usage)}\n`:''}\n曲数だけでなく、歌詞やメモの長さで容量は変わります。端末内の使用量には下書き・復元前のコピー・アプリ本体も含まれます。${bytes>MAX_FILE_SIZE?'\n\n注意：現在のJSONは25 MBを超えるため、この版ではそのまま復元できません。データの分割などの対応が必要です。':''}`,confirm:'閉じる',cancel:'戻る'});break;
+    }
     case 'filters': await openFilters(); break;
     case 'add-tag': captureTagInput(node.dataset.key); refreshTagEditor(node.dataset.key); scheduleDraft(); $(`[data-tag-input="${node.dataset.key}"]`)?.focus(); break;
     case 'remove-tag': editor.song[node.dataset.key].splice(Number(node.dataset.index),1); refreshTagEditor(node.dataset.key); scheduleDraft(); break;
@@ -434,7 +457,7 @@ async function handleAction(action, node) {
     case 'new-category': {
       const label = $('#new-category').value.trim();
       if (!label) throw new Error('分類名を入力してください。');
-      await commit(next => { next.categories.push({id:id(),label,color:COLORS[next.categories.length % COLORS.length]}); });
+      await commit(next => { next.categories.push({id:id(),label,color:COLORS[next.categories.length % COLORS.length],icon:'note'}); });
       await renderRoute(true); toast('分類を追加しました'); break;
     }
     case 'rename-category': {
@@ -473,6 +496,10 @@ async function onClick(event) {
   const node = event.target.closest('button,a'); if (!node) return;
   if (node.getAttribute('href') === '#content') { event.preventDefault(); root.focus(); return; }
   if (node.dataset.modal) return;
+  if (node.dataset.action === 'appearance-icon' || node.dataset.action === 'appearance-color') {
+    const key=node.dataset.action==='appearance-icon'?'icon':'color';appearanceDraft[key]=node.dataset.value;
+    document.querySelectorAll(`[data-action="${node.dataset.action}"]`).forEach(button=>{const selected=button===node;button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected));});return;
+  }
   if (node.dataset.action === 'toggle-filter-tag') {
     const key = node.dataset.key, value = node.dataset.value, current = filterWorking[key] ?? [];
     filterWorking[key] = current.includes(value) ? current.filter(item => item !== value) : [...current,value];
@@ -492,7 +519,7 @@ async function onClick(event) {
 function onInput(event) {
   const node = event.target;
   if (node.dataset.themePicker || node.dataset.themeChannel) { previewTheme(node); return; }
-  if (node.id === 'song-search') { query = node.value; $('.search-clear').hidden = !query; if (!event.isComposing) updateResults(); return; }
+  if (node.id === 'song-search') { query = node.value;listPage=0; $('.search-clear').hidden = !query;clearTimeout(searchTimer);if (!event.isComposing) searchTimer=setTimeout(updateResults,100); return; }
   if (node.dataset.songField && editor) { editor.song[node.dataset.songField] = node.value; scheduleDraft(); }
   if (node.dataset.range && editor) {
     const range = editor.song.ranges[node.dataset.range]; range[node.dataset.rangeField] = node.value;
@@ -529,10 +556,12 @@ try {
   store = await openStorage(); state = await store.load();
   document.addEventListener('click',onClick);
   document.addEventListener('input',onInput);
-  document.addEventListener('compositionend',event => { if (event.target.id === 'song-search') { query = event.target.value; updateResults(); } });
+  document.addEventListener('compositionend',event => { if (event.target.id === 'song-search') { query = event.target.value;listPage=0;clearTimeout(searchTimer);updateResults(); } });
   document.addEventListener('change',async event => {
     try {
-      if (event.target.id === 'sort') { sort = event.target.value; updateResults(); }
+      if (event.target.id === 'sort') { sort = event.target.value;listPage=0; updateResults(); }
+      if (event.target.id === 'list-page') { listPage=Number(event.target.value);updateResults();window.scrollTo(0,0); }
+      if (event.target.id === 'show-artists' || event.target.id === 'animate-titles') {const key=event.target.id==='show-artists'?'showArtists':'animateTitles';const value=event.target.checked;await commit(next=>{next.preferences[key]=value;});toast('一覧の表示設定を保存しました');}
       if (event.target.id === 'lyrics-size') { await commit(next => { next.preferences.lyricsFont = Number(event.target.value); }); toast('文字サイズを保存しました'); }
       if (event.target.id === 'import-file') { const file = event.target.files?.[0]; event.target.value = ''; if (!busy) { busy = true; try { await importFile(file); } finally { busy = false; } } }
     } catch (error) { toast(error.message,true); }

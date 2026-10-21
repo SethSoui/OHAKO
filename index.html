@@ -1,39 +1,69 @@
 <!doctype html>
 <html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f2f5f7">
-  <meta name="color-scheme" content="light">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="OHAKO">
-  <meta name="description" content="十八番も、練習中のあの曲も。自分だけのカラオケレパートリーを育てる楽曲ノート。">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'self'; manifest-src 'self'">
-  <meta name="referrer" content="no-referrer">
-  <title>OHAKO-18番-</title>
-  <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="./app.mjs"></script>
-</head>
-<body>
-  <a class="skip-link" href="#content">本文へ移動</a>
-  <header class="app-header">
-    <a class="brand" href="#/" aria-label="OHAKO 楽曲一覧"><span class="brand-mark" aria-hidden="true">18</span><span>OHAKO<small>-18番-</small></span></a>
-    <span id="connection" class="connection" aria-live="polite"></span>
-    <button id="header-add" class="icon-button" data-action="add" aria-label="楽曲を追加">＋</button>
-  </header>
-  <div id="update-banner" class="update-banner" hidden><span>新しいバージョンを使えます</span><button data-action="update-app">更新する</button></div>
-  <main id="content" tabindex="-1"><div class="loading"><span class="brand-mark" aria-hidden="true">18</span><p>楽曲ノートを開いています…</p></div></main>
-  <nav class="bottom-nav" aria-label="メインメニュー">
-    <a href="#/" data-nav="list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M3 6h.1M3 12h.1M3 18h.1"/></svg><span>楽曲一覧</span></a>
-    <a href="#/add" data-nav="add"><span class="nav-plus" aria-hidden="true">＋</span><span>追加する</span></a>
-    <a href="#/settings" data-nav="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg><span>設定</span></a>
-  </nav>
-  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <noscript><p>OHAKOを使うには、ブラウザのJavaScriptを有効にしてください。</p></noscript>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f2f5f7" />
+    <meta name="color-scheme" content="light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="OHAKO" />
+    <meta
+      name="description"
+      content="十八番も、練習中のあの曲も。自分だけのカラオケレパートリーを育てる楽曲ノート。"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'self'; manifest-src 'self'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>OHAKO-18番-</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.mjs"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">本文へ移動</a>
+    <header class="app-header">
+      <a class="brand" href="#/" aria-label="OHAKO 楽曲一覧"
+        ><span class="brand-mark" aria-hidden="true">18</span
+        ><span>OHAKO<small>-18番-</small></span></a
+      >
+      <span id="connection" class="connection" aria-live="polite"></span>
+      <button id="header-add" class="icon-button" data-action="add" aria-label="楽曲を追加">
+        ＋
+      </button>
+    </header>
+    <div id="update-banner" class="update-banner" hidden>
+      <span>新しいバージョンを使えます</span><button data-action="update-app">更新する</button>
+    </div>
+    <main id="content" tabindex="-1">
+      <div class="loading">
+        <span class="brand-mark" aria-hidden="true">18</span>
+        <p>楽曲ノートを開いています…</p>
+      </div>
+    </main>
+    <nav class="bottom-nav" aria-label="メインメニュー">
+      <a href="#/" data-nav="list"
+        ><svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 6h12M8 12h12M8 18h12M3 6h.1M3 12h.1M3 18h.1" /></svg
+        ><span>楽曲一覧</span></a
+      >
+      <a href="#/add" data-nav="add"
+        ><span class="nav-plus" aria-hidden="true">＋</span><span>追加する</span></a
+      >
+      <a href="#/settings" data-nav="settings"
+        ><svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 17h16M8 4v6M16 14v6" /></svg
+        ><span>設定</span></a
+      >
+    </nav>
+    <dialog id="modal" aria-labelledby="modal-title">
+      <div id="modal-content"></div>
+    </dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <noscript><p>OHAKOを使うには、ブラウザのJavaScriptを有効にしてください。</p></noscript>
+  </body>
 </html>

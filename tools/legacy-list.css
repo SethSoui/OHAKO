@@ -1,0 +1,100 @@
+/* Frozen card layout, only loaded by the performance comparison. */
+.song-list {
+  display: grid;
+  gap: 10px;
+}
+.song-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+  min-width: 0;
+}
+.song-card:hover {
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+.song-index {
+  width: 30px;
+  align-self: flex-start;
+  padding-top: 4px;
+  color: #a7aaa0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+.song-body {
+  flex: 1;
+  min-width: 0;
+}
+.song-topline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 7px;
+  flex-wrap: wrap;
+}
+.song-title {
+  font-size: 17px;
+  line-height: 1.6;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.song-artist {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 3px 0 10px;
+  overflow-wrap: anywhere;
+}
+.song-card .arrow {
+  color: #adb0a6;
+  width: 17px;
+}
+.tag {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid #e7e7df;
+  padding: 2px 7px;
+  border-radius: 5px;
+  overflow-wrap: anywhere;
+}
+.key-inline {
+  font-size: 11px;
+  color: #79766d;
+  margin-left: auto;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 740px) {
+  .song-list {
+    grid-template-columns: 1fr 1fr;
+  }
+  .song-card {
+    padding: 22px 20px;
+  }
+}
+@media (max-width: 370px) {
+  .song-card {
+    padding: 17px 13px;
+    gap: 10px;
+  }
+  .song-index {
+    width: 25px;
+  }
+  .key-inline {
+    max-width: 100px;
+  }
+}
+.tag {
+  color: var(--muted);
+  border-color: var(--line);
+}
